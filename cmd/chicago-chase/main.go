@@ -112,4 +112,10 @@ func main() {
 	scheduler := optimizer.LinearCurriculum(portfolioVariance, riskParity, 0.3)
 	curriculum := optimizer.RunCurriculum(scheduler, 0.3, start, bounds(), config(1), 20000)
 	printRiskBlock(curriculum.Solution)
+
+	fmt.Println()
+	fmt.Println("=== STATE-SCHEDULED (min-variance -> risk parity on convergence stall) ===")
+	stateScheduled := optimizer.RunStateScheduled(portfolioVariance, riskParity, 3, 1e-4, 500, 20000, start, bounds(), config(1))
+	fmt.Printf("switched at chunk: %d\n", stateScheduled.SwitchStep)
+	printRiskBlock(stateScheduled.Solution)
 }
