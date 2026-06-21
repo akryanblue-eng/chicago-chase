@@ -9,10 +9,17 @@ const riskParityWMax = 1.0
 // covariance matrix; lambdaSum, lambdaNeg, and lambdaUpper weight the
 // sum-to-one, non-negativity, and upper-bound penalties respectively.
 //
-// The parity term is normalized by portfolio variance so it stays
-// shape-driven rather than scaling with the magnitude of cov.
+// The parity term is normalized by trace(cov) rather than portfolio
+// variance: trace is invariant to w, which avoids a feedback loop where
+// shrinking variance (the denominator) amplifies the parity term itself —
+// a degenerate corner that variance-normalization is prone to when cov is
+// ill-conditioned.
 func RiskParityObjective(cov [][]float64, lambdaSum, lambdaNeg, lambdaUpper float64) ObjectiveFunc {
 	n := len(cov)
+	var trace float64
+	for i := 0; i < n; i++ {
+		trace += cov[i][i]
+	}
 
 	return func(w []float64) float64 {
 		variance := quadForm(w, cov)
@@ -24,7 +31,7 @@ func RiskParityObjective(cov [][]float64, lambdaSum, lambdaNeg, lambdaUpper floa
 			d := wi*mrc[i] - target
 			parity += d * d
 		}
-		parity /= variance + riskParityEpsilon
+		parity /= trace + riskParityEpsilon
 
 		var sum, negPenalty, upperPenalty float64
 		for _, wi := range w {
