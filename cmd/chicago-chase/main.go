@@ -70,6 +70,29 @@ func config(seed int64) optimizer.Config {
 	}
 }
 
+// printRiskBlock prints weights, raw variance, per-asset risk contribution,
+// and the max risk-contribution deviation for a candidate portfolio.
+func printRiskBlock(weights []float64) {
+	rc := riskContributions(weights)
+	maxRC, minRC := rc[0], rc[0]
+	for _, v := range rc {
+		if v > maxRC {
+			maxRC = v
+		}
+		if v < minRC {
+			minRC = v
+		}
+	}
+
+	fmt.Printf("weights: %.4f\n", weights)
+	fmt.Printf("variance: %.6f\n", rawVariance(weights))
+	fmt.Println("RC:")
+	for i, v := range rc {
+		fmt.Printf("  asset%d: %.6f\n", i, v)
+	}
+	fmt.Printf("max deviation: %.6f\n", maxRC-minRC)
+}
+
 func main() {
 	start := []float64{0.25, 0.25, 0.25, 0.25}
 
@@ -82,23 +105,11 @@ func main() {
 	fmt.Println("=== RISK PARITY ===")
 	riskParity := optimizer.RiskParityObjective(covariance, 10, 100, 10)
 	rp := optimizer.Anneal(riskParity, start, bounds(), config(1))
-	rc := riskContributions(rp.Solution)
+	printRiskBlock(rp.Solution)
 
-	maxRC, minRC := rc[0], rc[0]
-	for _, v := range rc {
-		if v > maxRC {
-			maxRC = v
-		}
-		if v < minRC {
-			minRC = v
-		}
-	}
-
-	fmt.Printf("weights: %.4f\n", rp.Solution)
-	fmt.Printf("variance: %.6f\n", rawVariance(rp.Solution))
-	fmt.Println("RC:")
-	for i, v := range rc {
-		fmt.Printf("  asset%d: %.6f\n", i, v)
-	}
-	fmt.Printf("max deviation: %.6f\n", maxRC-minRC)
+	fmt.Println()
+	fmt.Println("=== CURRICULUM (min-variance -> risk parity at 30%) ===")
+	scheduler := optimizer.LinearCurriculum(portfolioVariance, riskParity, 0.3)
+	curriculum := optimizer.RunCurriculum(scheduler, 0.3, start, bounds(), config(1), 20000)
+	printRiskBlock(curriculum.Solution)
 }
