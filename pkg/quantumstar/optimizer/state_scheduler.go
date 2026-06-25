@@ -10,6 +10,31 @@ type StateScheduleResult struct {
 	SwitchStep  int
 }
 
+// TemperaturePolicy biases the InitialTemp of the next chunk using the
+// most recent stallSlope, clamped to [Min, Max]. It's evaluated once per
+// chunk boundary, between Anneal calls — never mid-run — so it never
+// reaches into the kernel. The zero value disables biasing entirely.
+type TemperaturePolicy struct {
+	Gain float64
+	Min  float64
+	Max  float64
+}
+
+// nextTemp biases baseTemp inversely to slope: stallSlope is the cost
+// improvement over the trailing window, large when progress is strong
+// and near zero (or negative) when stalled, so subtracting Gain*slope
+// raises temperature on stall and lowers it on strong progress.
+func (p TemperaturePolicy) nextTemp(baseTemp, slope float64) float64 {
+	t := baseTemp - p.Gain*slope
+	if t < p.Min {
+		return p.Min
+	}
+	if t > p.Max {
+		return p.Max
+	}
+	return t
+}
+
 // RunStateScheduled runs first under chunked annealing, recording the best
 // cost at the end of each chunk, and switches permanently to second the
 // first time the trailing window's cost improvement drops below
@@ -20,7 +45,13 @@ type StateScheduleResult struct {
 // remaining chunk runs under second. Each chunk after the first offsets
 // cfg.Seed by its chunk index, mirroring RunCurriculum's phase-seed
 // convention, so it doesn't replay an earlier chunk's random sequence.
-func RunStateScheduled(first, second ObjectiveFunc, window int, threshold float64, chunkIterations, totalIterations int, start []float64, bounds Bounds, cfg Config) StateScheduleResult {
+//
+// If tempPolicy is non-zero, each chunk after the window has filled
+// seeds its InitialTemp from the prior chunk's stallSlope via
+// tempPolicy.nextTemp, instead of reusing cfg.InitialTemp unchanged.
+// This only ever sets a chunk's starting temperature before Anneal is
+// called — Anneal itself stays unaware any of this exists.
+func RunStateScheduled(first, second ObjectiveFunc, window int, threshold float64, chunkIterations, totalIterations int, start []float64, bounds Bounds, cfg Config, tempPolicy TemperaturePolicy) StateScheduleResult {
 	objective := first
 	switchStep := -1
 	current := start
@@ -38,6 +69,10 @@ func RunStateScheduled(first, second ObjectiveFunc, window int, threshold float6
 		chunkCfg := cfg
 		chunkCfg.MaxIterations = iters
 		chunkCfg.Seed = cfg.Seed + int64(chunk)
+
+		if slope, ok := stallSlope(costs, window); ok && tempPolicy != (TemperaturePolicy{}) {
+			chunkCfg.InitialTemp = tempPolicy.nextTemp(cfg.InitialTemp, slope)
+		}
 
 		last = Anneal(objective, current, bounds, chunkCfg)
 		current = last.Solution

@@ -115,7 +115,14 @@ func main() {
 
 	fmt.Println()
 	fmt.Println("=== STATE-SCHEDULED (min-variance -> risk parity on convergence stall) ===")
-	stateScheduled := optimizer.RunStateScheduled(portfolioVariance, riskParity, 3, 1e-4, 500, 20000, start, bounds(), config(1))
+	stateScheduled := optimizer.RunStateScheduled(portfolioVariance, riskParity, 3, 1e-4, 500, 20000, start, bounds(), config(1), optimizer.TemperaturePolicy{})
 	fmt.Printf("switched at chunk: %d\n", stateScheduled.SwitchStep)
 	printRiskBlock(stateScheduled.Solution)
+
+	fmt.Println()
+	fmt.Println("=== STATE-SCHEDULED + TEMPERATURE POLICY (heat on stall, cool on progress) ===")
+	tempPolicy := optimizer.TemperaturePolicy{Gain: 5, Min: 0.05, Max: 2.0}
+	stateScheduledHeated := optimizer.RunStateScheduled(portfolioVariance, riskParity, 3, 1e-4, 500, 20000, start, bounds(), config(1), tempPolicy)
+	fmt.Printf("switched at chunk: %d\n", stateScheduledHeated.SwitchStep)
+	printRiskBlock(stateScheduledHeated.Solution)
 }

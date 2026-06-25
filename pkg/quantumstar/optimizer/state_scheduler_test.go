@@ -45,8 +45,8 @@ func TestRunStateScheduled_DeterministicForFixedSeed(t *testing.T) {
 	start := []float64{0.25, 0.25, 0.25, 0.25}
 	cfg := curriculumConfig(1)
 
-	r1 := RunStateScheduled(minVar, riskParity, 3, 1e-4, 500, 10000, start, curriculumBounds(), cfg)
-	r2 := RunStateScheduled(minVar, riskParity, 3, 1e-4, 500, 10000, start, curriculumBounds(), cfg)
+	r1 := RunStateScheduled(minVar, riskParity, 3, 1e-4, 500, 10000, start, curriculumBounds(), cfg, TemperaturePolicy{})
+	r2 := RunStateScheduled(minVar, riskParity, 3, 1e-4, 500, 10000, start, curriculumBounds(), cfg, TemperaturePolicy{})
 
 	if r1.SwitchStep != r2.SwitchStep {
 		t.Fatalf("expected identical switch step for the same seed, got %d vs %d", r1.SwitchStep, r2.SwitchStep)
@@ -65,6 +65,56 @@ func TestRunStateScheduled_DeterministicForFixedSeed(t *testing.T) {
 	for i := range r1.Solution {
 		if r1.Solution[i] != r2.Solution[i] {
 			t.Fatalf("expected identical final solution, got %v vs %v", r1.Solution, r2.Solution)
+		}
+	}
+}
+
+func TestTemperaturePolicy_RaisesTempOnStall(t *testing.T) {
+	policy := TemperaturePolicy{Gain: 1, Min: 0, Max: 10}
+	got := policy.nextTemp(1.0, -1) // slope -1: cost got worse, not just flat
+	if got <= 1.0 {
+		t.Fatalf("expected temperature above base on stall, got %f", got)
+	}
+}
+
+func TestTemperaturePolicy_LowersTempOnStrongProgress(t *testing.T) {
+	policy := TemperaturePolicy{Gain: 1, Min: 0, Max: 10}
+	got := policy.nextTemp(1.0, 5) // slope 5: strong progress
+	if got >= 1.0 {
+		t.Fatalf("expected temperature below base on strong progress, got %f", got)
+	}
+}
+
+func TestTemperaturePolicy_ClampsToBounds(t *testing.T) {
+	policy := TemperaturePolicy{Gain: 1, Min: 0.1, Max: 2.0}
+
+	if got := policy.nextTemp(1.0, 100); got != policy.Min {
+		t.Fatalf("expected clamp to Min=%f on extreme progress, got %f", policy.Min, got)
+	}
+	if got := policy.nextTemp(1.0, -100); got != policy.Max {
+		t.Fatalf("expected clamp to Max=%f on extreme stall, got %f", policy.Max, got)
+	}
+}
+
+func TestRunStateScheduled_TemperaturePolicyDeterministicForFixedSeed(t *testing.T) {
+	minVar := curriculumMinVariance
+	riskParity := RiskParityObjective(curriculumCov, 10, 100, 10)
+	start := []float64{0.25, 0.25, 0.25, 0.25}
+	cfg := curriculumConfig(1)
+	policy := TemperaturePolicy{Gain: 5, Min: 0.05, Max: 2.0}
+
+	r1 := RunStateScheduled(minVar, riskParity, 3, 1e-4, 500, 10000, start, curriculumBounds(), cfg, policy)
+	r2 := RunStateScheduled(minVar, riskParity, 3, 1e-4, 500, 10000, start, curriculumBounds(), cfg, policy)
+
+	if r1.SwitchStep != r2.SwitchStep {
+		t.Fatalf("expected identical switch step under temperature policy, got %d vs %d", r1.SwitchStep, r2.SwitchStep)
+	}
+	if r1.Cost != r2.Cost {
+		t.Fatalf("expected identical final cost under temperature policy, got %f vs %f", r1.Cost, r2.Cost)
+	}
+	for i := range r1.Solution {
+		if r1.Solution[i] != r2.Solution[i] {
+			t.Fatalf("expected identical final solution under temperature policy, got %v vs %v", r1.Solution, r2.Solution)
 		}
 	}
 }
